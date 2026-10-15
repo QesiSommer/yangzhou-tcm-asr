@@ -233,9 +233,11 @@ with gr.Blocks(theme=gr.themes.Soft()) as demo:
                 )
 
     # ------------------ 密码验证逻辑 ------------------
+    # 仅演示用门禁，非安全边界；可通过 DEMO_PASSWORD 环境变量修改
+    demo_password = os.environ.get("DEMO_PASSWORD", "tiaozhanbei2026")
+
     def verify_password(pwd):
-        # ⚠️ 这里是你的专属密码
-        if pwd == "tiaozhanbei2026": 
+        if pwd == demo_password:
             # 密码正确：隐藏登录层，显示主界面，清空报错
             return gr.update(visible=False), gr.update(visible=True), ""
         else:

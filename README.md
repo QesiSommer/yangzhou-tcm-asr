@@ -1,91 +1,122 @@
 # 扬州方言中医智能问诊 ASR 纠错系统
 
-面向中医门诊的方言语音识别与医学术语纠错系统：患者使用扬州方言陈述症状，ASR 识别出的同音/近音错字（如「当归」→「荡鬼」、「气虚」→「七区」）由 **N-best Closest 约束解码** 模块在医学术语词典与本地大模型的辅助下完成纠正，且**最终输出严格限定在 ASR 的物理候选路径内**，从机制上杜绝大模型幻觉。
+## 1. 项目解决什么问题
 
-## 整体架构
+中医门诊中，患者常使用扬州方言陈述症状，通用 ASR 模型识别方言时会产生大量同音/近音错字——「当归」被识别成「荡鬼」、「气虚」被识别成「七区」。这些错字直接进入问诊记录会造成误诊风险。
 
-```
-医患对话音频
-   │
-   ▼
-ASR 语音识别（Whisper large-v3 / faster-whisper / FunASR SenseVoiceSmall）
-   │  N-best 候选列表 + 置信度
-   ▼
-┌─────────────────────────────────────────────┐
-│  N-best Closest 约束纠错（correction/）        │
-│  1. 字典预热：扬州方言/中医术语词典加权          │
-│  2. LLM 自由推理：本地部署 qwen2.5 生成纠错参考  │
-│  3. 最近距离映射：编辑距离把语义意图吸附回        │
-│     ASR 物理候选路径，输出得分最高的原始候选      │
-└─────────────────────────────────────────────┘
-   │
-   ▼
-结构化问诊文本 → 本地大模型信息抽取 → 问诊报告
-```
+直接用大模型改写原文也不可行：LLM 自由生成会「幻觉」扩写病情、更改原意，这在医疗场景中绝对禁止。
 
-核心打分公式（`correction/utils.py`）：
+本项目的方案是 **N-best Closest 约束纠错**：结合扬州方言/中医术语词典与本地大模型的语义参考，把纠错意图吸附回 ASR 的 N-best 物理候选路径，**最终输出严格来自 ASR 原始候选**，从机制上保证零幻觉。
 
-```
-Final_Score = ASR_Conf × w1 + Dict_Bonus × w2 − Levenshtein_Dist × w3
-```
+## 2. 主要功能
 
-## 目录结构
+| 功能 | 位置 | 说明 |
+|---|---|---|
+| N-best Closest 纠错流水线 | `correction/error_correction.py` | 词典加权 → 本地 LLM 纠错参考 → 编辑距离映射 → 输出得分最高的 ASR 原始候选 |
+| 综合打分引擎 | `correction/utils.py` | `Final_Score = ASR_Conf×w1 + Dict_Bonus×w2 − Levenshtein×w3`，权重可调 |
+| 本地 LLM 客户端 | `correction/llm_client.py` | 对接 Ollama（qwen2.5:1.5b），LLM 不可用时自动降级为纯词典+置信度模式 |
+| 单元测试 | `correction/test_pipeline.py` | 覆盖扬州话典型错词场景（当归→荡鬼、气虚→七区），Mock LLM 无需真模型 |
+| Whisper 增量训练 | `asr/train_whisper_simple.py` | Whisper Large v3 简化训练脚本，内置示例元数据生成 |
+| 语音转写主流程 | `asr/main_translate.py` | 按显存/时长自动选型 tiny→large-v3（依赖的辅助模块未归档，暂不可独立运行，见「已知缺失」） |
+| Gradio 演示应用 | `demo/app_gradio.py` | FunASR SenseVoiceSmall + fsmn-vad 长音频分段 + LLM 问诊总结 |
+| 医院离线部署 | `correction/hospital_install.bat` | 断网终端一键完成 Ollama 静默安装、模型导入、开机自启（医生无感） |
 
-```
-├── asr/                     # 语音识别
-│   ├── train_whisper_simple.py   # Whisper large-v3 增量训练（LoRA-free 简化版）
-│   └── main_translate.py         # 按显存/时长自动选型的转写主流程
-├── correction/              # 扬州方言 ASR 纠错模块（核心）
-│   ├── error_correction.py       # N-best Closest 纠错流水线
-│   ├── utils.py                  # 编辑距离 / 词典匹配 / 打分
-│   ├── llm_client.py             # 本地 LLM（Ollama）客户端，含降级策略
-│   ├── test_pipeline.py          # 含扬州话典型错词场景的单元测试
-│   ├── plan.md / deployment_plan.md
-│   ├── prepare_offline_model.bat # 拉取 qwen2.5:1.5b 并打包离线模型
-│   └── hospital_install.bat      # 医院断网终端一键部署（Ollama + 模型 + 自启）
-├── demo/
-│   └── app_gradio.py             # Gradio 演示：SenseVoiceSmall + fsmn-vad + LLM 总结
-└── docs/                    # 设计文档（含完整 GUI/服务端架构设计）
-```
+## 3. 安装方法
 
-## 快速开始
+环境要求：Python 3.10+；GPU 可选（演示与纠错在 CPU 上即可运行）。
 
 ```bash
+git clone https://github.com/QesiSommer/yangzhou-tcm-asr.git
+cd yangzhou-tcm-asr
 pip install -r requirements.txt
+```
 
-# 运行纠错模块单元测试（Mock LLM，无需本地大模型即可验证核心算法）
+可选组件：
+
+- 本地大模型：安装 [Ollama](https://ollama.com) 后执行 `ollama pull qwen2.5:1.5b`（不装也能跑，`llm_client.py` 会自动降级）
+- Whisper 训练：首次运行会通过 hf-mirror.com 自动下载模型权重（缓存目录由 `HF_HOME` 环境变量控制，默认 `~/.cache/huggingface`）
+
+## 4. 使用方法
+
+**运行纠错模块单元测试**（Mock LLM，无需本地大模型）：
+
+```bash
 cd correction
 python test_pipeline.py
 ```
 
-启动 Gradio 演示（需要设置 `DEEPSEEK_API_KEY` 环境变量，或自行替换 LLM 接入点）：
+**体验纠错流水线演示**（推荐先跑这个，内置扬州话错词数据）：
+
+```bash
+cd correction
+python error_correction.py
+```
+
+**启动 Gradio 演示**（浏览器打开 `http://localhost:7860`；登录门禁默认口令 `tiaozhanbei2026`，仅演示用，可用 `DEMO_PASSWORD` 环境变量修改）：
 
 ```bash
 python demo/app_gradio.py
 ```
 
-Whisper 训练脚本需要自备方言语音数据集与对应 metadata JSON：
+**Whisper 增量训练**（无命令行参数，运行后自动生成示例元数据到 `data\` 并开始 15 轮训练；实际训练请替换 `data/train_metadata.json` 为自己的方言数据）：
 
 ```bash
-python asr/train_whisper_simple.py --help
+python asr/train_whisper_simple.py
 ```
 
-## 医院离线部署
+**医院离线部署**：参考 `correction/deployment_plan.md`，在联网机运行 `correction/prepare_offline_model.bat` 导出离线模型包，然后按 `hospital_install.bat` 顶部注释操作。
 
-`correction/hospital_install.bat` 面向完全断网的医院终端：
+> `asr/main_translate.py` 依赖的 `audio_duration_detector`、`homophone_corrector`、`accuracy_analyzer` 模块未随仓库归档，暂不可独立运行，完整设计见 `docs/`。
 
-1. 准备 `OllamaSetup.exe`（官网下载，因体积原因未随仓库分发）
-2. 运行 `correction/prepare_offline_model.bat` 在联网机上拉取 `qwen2.5:1.5b` 并导出 `ollama_model_offline\`
-3. 将脚本 + 安装包 + 模型目录放入同一目录，双击 `hospital_install.bat` 即可完成静默安装、模型导入、开机自启（对医生无感）
+## 5. 输入输出示例
 
-LLM 不可用时 `llm_client.py` 会自动降级为纯词典 + ASR 置信度打分模式，纠错仍可部分完成。
+**输入**（ASR 返回的 N-best 候选列表 + 问诊上下文）：
+
+```python
+n_best_list = [
+    {"text": "需要荡鬼调理", "conf": 0.80},   # ASR 最置信，但「荡鬼」是「当归」的方言同音错字
+    {"text": "需要当归调理", "conf": 0.15},
+    {"text": "需要当鬼调理", "conf": 0.05},
+]
+context = "患者自述：最近头晕乏力，面色萎黄，经量少色淡。"
+```
+
+**输出**（`python correction/error_correction.py` 实际运行结果）：
+
+```
+======================================================================
+  TCM ASR 纠错报告
+======================================================================
+  LLM 自由纠错文本   : 需要当归调理
+  最终输出           : 需要当归调理
+  最终得分           : 0.2600
+  权重配置           : w1=0.4, w2=0.2, w3=0.4
+----------------------------------------------------------------------
+  候选句                ASR   词典   编辑距    最终分
+----------------------------------------------------------------------
+  需要当归调理          0.150  [Y]      0   0.2600
+  需要当鬼调理          0.050  [N]      1  -0.3800
+  需要荡鬼调理          0.800  [N]      2  -0.4800
+======================================================================
+```
+
+尽管「需要荡鬼调理」的 ASR 置信度最高（0.80），但它未命中中医术语词典、且与 LLM 纠错参考的编辑距离最大，综合得分最低——系统最终输出物理候选中的「需要当归调理」，而不是 LLM 自由生成的文本。
+
+## 目录结构
+
+```
+├── asr/                     # 语音识别（训练 + 转写）
+├── correction/              # 扬州方言 ASR 纠错模块（核心）
+├── demo/                    # Gradio 演示应用
+└── docs/                    # 设计文档（含完整 GUI/服务端架构设计）
+```
 
 ## 已知缺失
 
 以下内容因原始工作目录未归档而缺失，完整设计见 `docs/`：
 
 - 前端 GUI `speech_to_text_ui_backup.py` 与后端引擎 `speech_to_text_plugin.py`（PyQt5 实时转写界面，`docs/实施方案.md` 与 `docs/问诊系统框架流程图.md` 含逐类逐方法设计）
-- `asr/main_translate.py` 引用的辅助模块：`audio_duration_detector`、`homophone_corrector`、`accuracy_analyzer`（该脚本暂不可独立运行）
+- `asr/main_translate.py` 引用的辅助模块（见第 4 节说明）
 
 ## 语料说明
 
