@@ -18,7 +18,6 @@
 | 单元测试 | `correction/test_pipeline.py` | 覆盖扬州话典型错词场景（当归→荡鬼、气虚→七区），Mock LLM 无需真模型 |
 | Whisper 增量训练 | `asr/train_whisper_simple.py` | Whisper Large v3 简化训练脚本，内置示例元数据生成 |
 | 语音转写主流程 | `asr/main_translate.py` | 按显存/时长自动选型 tiny→large-v3（依赖的辅助模块未归档，暂不可独立运行，见「已知缺失」） |
-| Gradio 演示应用 | `demo/app_gradio.py` | FunASR SenseVoiceSmall + fsmn-vad 长音频分段 + LLM 问诊总结 |
 | 医院离线部署 | `correction/hospital_install.bat` | 断网终端一键完成 Ollama 静默安装、模型导入、开机自启（医生无感） |
 
 ## 3. 安装方法
@@ -51,14 +50,6 @@ python test_pipeline.py
 cd correction
 python error_correction.py
 ```
-
-**启动 Gradio 演示**（登录门禁默认口令 `tiaozhanbei2026`，仅演示用，可用 `DEMO_PASSWORD` 环境变量修改）：
-
-```bash
-python demo/app_gradio.py
-```
-
-> 服务监听 `0.0.0.0:7860`：本机用 `http://localhost:7860` 访问；同一局域网内其他设备用 `http://<本机局域网IP>:7860` 访问（需防火墙放行 7860 端口）。这是本机运行的演示服务，非公网网页——外网访问需自行内网穿透，且推理计算均发生在运行端。
 
 **Whisper 增量训练**（无命令行参数，运行后自动生成示例元数据到 `data\` 并开始 15 轮训练；实际训练请替换 `data/train_metadata.json` 为自己的方言数据）：
 
@@ -109,7 +100,6 @@ context = "患者自述：最近头晕乏力，面色萎黄，经量少色淡。
 ```
 ├── asr/                     # 语音识别（训练 + 转写）
 ├── correction/              # 扬州方言 ASR 纠错模块（核心）
-├── demo/                    # Gradio 演示应用
 └── docs/                    # 设计文档（含完整 GUI/服务端架构设计）
 ```
 
