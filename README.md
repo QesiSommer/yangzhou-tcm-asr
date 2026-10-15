@@ -52,11 +52,13 @@ cd correction
 python error_correction.py
 ```
 
-**启动 Gradio 演示**（浏览器打开 `http://localhost:7860`；登录门禁默认口令 `tiaozhanbei2026`，仅演示用，可用 `DEMO_PASSWORD` 环境变量修改）：
+**启动 Gradio 演示**（登录门禁默认口令 `tiaozhanbei2026`，仅演示用，可用 `DEMO_PASSWORD` 环境变量修改）：
 
 ```bash
 python demo/app_gradio.py
 ```
+
+> 服务监听 `0.0.0.0:7860`：本机用 `http://localhost:7860` 访问；同一局域网内其他设备用 `http://<本机局域网IP>:7860` 访问（需防火墙放行 7860 端口）。这是本机运行的演示服务，非公网网页——外网访问需自行内网穿透，且推理计算均发生在运行端。
 
 **Whisper 增量训练**（无命令行参数，运行后自动生成示例元数据到 `data\` 并开始 15 轮训练；实际训练请替换 `data/train_metadata.json` 为自己的方言数据）：
 
