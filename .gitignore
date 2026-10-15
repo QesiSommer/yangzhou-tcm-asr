@@ -1,0 +1,21 @@
+__pycache__/
+*.py[cod]
+
+# 模型与二进制大文件
+*.exe
+*.pth
+*.bin
+ollama_model_offline/
+huggingface_cache/
+
+# 音视频语料（版权原因不随仓库分发）
+*.mp4
+*.wav
+*.mp3
+
+# 环境与临时文件
+.venv/
+venv/
+.ipynb_checkpoints/
+*.log
+.DS_Store

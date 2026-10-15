@@ -1,0 +1,9 @@
+torch
+tqdm
+numpy
+openai-whisper
+transformers
+opencc
+funasr
+gradio
+openai
